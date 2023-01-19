@@ -1,1 +1,1 @@
-from tree_rc import rc as tree_rc
+from .tree_rc import rc as tree_rc

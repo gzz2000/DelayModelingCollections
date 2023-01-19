@@ -23,9 +23,11 @@ class Parasitics(object):
         self.ress_name = ress
 
         self.name2id = {}
+        self.names = []
         for name in self._generate_names():
             if name not in self.name2id:
                 self.name2id[name] = len(self.name2id)
+                self.names.append(name)
 
         self.endpoints = [
             (self.name2id[name], io)
@@ -43,9 +45,13 @@ class Parasitics(object):
             (self.name2id[res[0]], self.name2id[res[1]], res[2])
             for res in ress
         ]
+        self.n = len(self.name2id)
 
     def __repr__(self):
-        return f'<Parasitics: {len(self.name2id)} nodes, {len(self.grounded_caps)} grounded / {len(self.coupling_caps)} coupling caps, {len(self.ress)} ress>'
+        return f'<Parasitics: {self.n} nodes, \
+        {len(self.grounded_caps)} grounded / \
+        {len(self.coupling_caps)} coupling caps, \
+        {len(self.ress)} ress>'
 
 def parse_file(path):
     with open(path) as f:
