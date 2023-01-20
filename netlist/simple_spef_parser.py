@@ -1,8 +1,6 @@
 # a deadly simple spef parser in python.
 # only expects and parses one net.
 
-# Parasitics = namedtuple('Parasitics', ['endpoints', 'caps', 'ress'])
-
 class Parasitics(object):
     def _generate_names(self):
         for endpoint, _ in self.endpoints_name:
@@ -48,10 +46,11 @@ class Parasitics(object):
         self.n = len(self.name2id)
 
     def __repr__(self):
-        return f'<Parasitics: {self.n} nodes, \
-        {len(self.grounded_caps)} grounded / \
-        {len(self.coupling_caps)} coupling caps, \
-        {len(self.ress)} ress>'
+        return (f'<Parasitics object at {hex(id(self))}: '
+                f'{self.n} nodes, '
+                f'{len(self.grounded_caps)} grounded / '
+                f'{len(self.coupling_caps)} coupling caps, '
+                f'{len(self.ress)} ress>')
 
 def parse_file(path):
     with open(path) as f:
