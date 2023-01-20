@@ -3,8 +3,6 @@
 # input is supposed to be a ramp shape _/- with a specified 0-100% slew.
 
 import numpy as np
-from netlist import tree_rc
-import pdb
 
 # build matrix A, B, s. t. the voltage vector v satisfies
 # Av + Bv' = u,  where u is [<root voltage input>, 0^(n-1)].transpose().
@@ -35,7 +33,8 @@ def build_matrix(rc):
             A[i2, i1] -= invr
     return A, B
 
-def calc_vt(rc, slew=0., time_step=0.01, n_steps=5000, method='backward_euler'):
+# SPICE
+def spice_calc_vt(rc, slew=0., time_step=0.01, n_steps=5000, method='backward_euler'):
     assert method in ['forward_euler', 'backward_euler', 'trapezoidal']
     A, B = build_matrix(rc)
     t = 0.
@@ -43,7 +42,8 @@ def calc_vt(rc, slew=0., time_step=0.01, n_steps=5000, method='backward_euler'):
     v[0] = 0.
     u = np.zeros(rc.n)
     # inversion is not the most efficient way to do this.
-    # better use gaussian elimination for these sparse matrices.
+    # better use gaussian elimination (or sparse LU factorization)
+    # for these sparse matrices.
     if method == 'forward_euler':
         invB = np.linalg.pinv(B)
     elif method == 'backward_euler':
@@ -56,10 +56,14 @@ def calc_vt(rc, slew=0., time_step=0.01, n_steps=5000, method='backward_euler'):
         if t >= slew: u[0] = 1.
         else: u[0] = t / slew
         if method == 'forward_euler':
+            # solution of Av(t-d) + B(v(t)-v(t-d))/d = u
+            # do not use in-place += here.
             v = v + (invB * time_step) @ (u - A @ v)
         elif method == 'backward_euler':
+            # solution of Av(t) + B(v(t)-v(t-d))/d = u
             v = invApBdt @ (u + B @ v / time_step)
-        else:
+        else: # trapezoidal
+            # solution of A(v(t)+v(t-d))/2 + B(v(t)-v(t-d))/d = u
             v = invAd2pBdt @ (u + BdtmAd2 @ v)
         v[0] = u[0]   # ugly fix?
         vs.append((t, v))
@@ -70,39 +74,29 @@ def calc_vt(rc, slew=0., time_step=0.01, n_steps=5000, method='backward_euler'):
     return vs
 
 def debug_calc(rc):
-    import matplotlib
-    import matplotlib.pyplot as plt
-    matplotlib.use('TkAgg')
-
+    import utils
+    time_step = 0.01
     n_steps = 5000
     slew = 6
-    vs_fe = calc_vt(rc, slew=slew, n_steps=n_steps, method='forward_euler')
-    vs_be = calc_vt(rc, slew=slew, n_steps=n_steps, method='backward_euler')
-    vs_tp = calc_vt(rc, slew=slew, n_steps=n_steps, method='trapezoidal')
-    # pdb.set_trace()
-
-    fig, ax = plt.subplots(
-        len(rc.endpoints), 1,
-        figsize=(10, 4 * len(rc.endpoints)),
-        dpi=80)
-    fig.canvas.manager.set_window_title('SPICE Waveforms')
-
-    for i in range(len(rc.endpoints)):
-        eid, io = rc.endpoints[i]
-        ax[i].title.set_text('{} ({})'.format(rc.names[eid], io))
-        for method, vs in [
-                ('Forward Euler', vs_fe),
-                ('Backward Euler', vs_be),
-                ('Trapezoidal', vs_tp)]:
-            if len(vs) < n_steps:
-                method += ' (Diverges)'
-            ax[i].plot(
-                [t for t, _ in vs], [v[eid] for _, v in vs],
-                label=method)
-        ax[i].legend()
-
-    plt.tight_layout(h_pad=5)
-    plt.show()
+    vs_fe = spice_calc_vt(
+        rc, slew=slew, time_step=time_step, n_steps=n_steps,
+        method='forward_euler')
+    vs_be = spice_calc_vt(
+        rc, slew=slew, time_step=time_step, n_steps=n_steps,
+        method='backward_euler')
+    vs_tp = spice_calc_vt(
+        rc, slew=slew, time_step=time_step, n_steps=n_steps,
+        method='trapezoidal')
+    methods = []
+    for method, vs in [
+            ('Forward Euler', vs_fe),
+            ('Backward Euler', vs_be),
+            ('Trapezoidal', vs_tp)]:
+        if len(vs) < n_steps:
+            method += ' (Diverges)'
+        methods.append((method, vs))
+    utils.plot(rc, methods, title='SPICE Waveforms')
 
 if __name__ == '__main__':
+    from netlist import tree_rc
     debug_calc(tree_rc)
