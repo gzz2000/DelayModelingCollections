@@ -14,7 +14,7 @@ import pdb
 # which means P is the eigenvector matrix of inv(B1) @ A1.
 # let xi_i = exp(-lambda_i * t)
 
-def solve_zero_slew(rc, time_step=0.01, n_steps=5000, include_internal=False):
+def calculate_mats_zero_slew(rc):
     A, B = build_matrix(rc)
     A1 = A[1:, 1:]
     B1 = B[1:, 1:]
@@ -27,6 +27,11 @@ def solve_zero_slew(rc, time_step=0.01, n_steps=5000, include_internal=False):
     #       v(0) = 0, v(infinity) = 1
     #    => eigP @ diag(coeff_xi) = np.ones(n - 1)
     coeff_xi = np.sum(np.linalg.pinv(eigP), axis=1)
+
+    return eig, eigP, coeff_xi
+
+def solve_zero_slew(rc, time_step=0.01, n_steps=5000, include_internal=False):
+    eig, eigP, coeff_xi = calculate_mats_zero_slew(rc)
     
     vs = [(0, np.zeros(rc.n))]
     t = 0.
@@ -41,7 +46,28 @@ def solve_zero_slew(rc, time_step=0.01, n_steps=5000, include_internal=False):
     else:
         return vs
 
-def debug_solve(rc, compare_spice=False):
+# for arbitrary slew, it is an average of impulse responses,
+# calculated using exp integrals.
+def solve_any_slew(rc, slew=0., time_step=0.01, n_steps=5000):
+    if slew <= 0.001:
+        print('zero slew case: use solve_zero_slew instead')
+        return solve_zero_slew(rc, time_step=time_step, n_steps=n_steps)
+    
+    eig, eigP, coeff_xi = calculate_mats_zero_slew(rc)
+    vs = [(0, np.zeros(rc.n))]
+    t = 0.
+    for i in range(n_steps):
+        v = np.zeros(rc.n)
+        v[0] = 1. if t >= slew else t / slew
+        # the exact solution is here
+        xi_slew = (np.exp(-eig * max(t - slew, 0.)) - np.exp(-eig * t)
+                   ) / eig / slew
+        v[1:] = v[0] - eigP @ (coeff_xi * xi_slew)
+        vs.append((t, v))
+        t += time_step
+    return vs
+
+def debug_solve_zero_slew(rc, compare_spice=False):
     time_step = 0.01
     n_steps = 5000
     vs, info = solve_zero_slew(
@@ -73,8 +99,28 @@ def debug_solve(rc, compare_spice=False):
         methods.append(('SPICE Trapezoidal', vs_spice))
 
     import utils
-    utils.plot(rc, methods, title='Exact Solutions')
+    utils.plot(rc, methods, title='Exact Solutions (Zero Slew)')
+
+def debug_solve_any_slew(rc, compare_spice=False):
+    slew = 6.
+    time_step = 0.01
+    n_steps = 5000
+    vs = solve_any_slew(
+        rc, slew=slew, time_step=time_step, n_steps=n_steps)
+    
+    methods = [('Exact', vs)]
+    if compare_spice:
+        from spice import spice_calc_vt
+        vs_spice = spice_calc_vt(
+            rc, slew=slew,
+            time_step=time_step, n_steps=n_steps,
+            method='trapezoidal')
+        methods.append(('SPICE Trapezoidal', vs_spice))
+
+    import utils
+    utils.plot(rc, methods, title=f'Exact Solutions (Slew={slew})')
 
 if __name__ == '__main__':
     from netlist import tree_rc
-    debug_solve(tree_rc, compare_spice=True)
+    debug_solve_zero_slew(tree_rc, compare_spice=True)
+    debug_solve_any_slew(tree_rc, compare_spice=True)
