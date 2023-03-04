@@ -45,6 +45,8 @@ class Parasitics(object):
         ]
         self.n = len(self.name2id)
 
+        self.sink_cell_caps = []
+
     def __repr__(self):
         return (f'<Parasitics object at {hex(id(self))}: '
                 f'{self.n} nodes, '

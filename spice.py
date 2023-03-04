@@ -1,5 +1,6 @@
 # a pure SPICE simulation
-# modified nodal analysis (MNA) - actually, not modified at all, pure NA.
+# modified nodal analysis (MNA) - actually, not modified at all, pure NA,
+#   because inductances are not supported yet.
 # input is supposed to be a ramp shape _/- with a specified 0-100% slew.
 
 import numpy as np
@@ -7,6 +8,9 @@ import numpy as np
 # build matrix A, B, s. t. the voltage vector v satisfies
 # Av + Bv' = u,  where u is [<root voltage input>, 0^(n-1)].transpose().
 # here, the L.H.S. Av + Bv' means "net (total) out current" except the 0th line.
+#
+# in literature, A is often called G consisting of conductances, and
+# B is often called C consisting of capacitances.
 def build_matrix(rc):
     assert rc.endpoints[0] == (0, 'O'), 'We assume root to be #0 node'
     A = np.zeros((rc.n, rc.n))
