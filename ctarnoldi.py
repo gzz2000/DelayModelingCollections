@@ -101,35 +101,21 @@ def exact_solution_compatible_nodriver_nosinkcap(rc, q=4, time_step=0.01, n_step
         t += time_step
     return vs
 
-# def _test_build_compare_perm():
-#     from netlist import tree_rc
-#     C, G = build_matrix_dr(tree_rc)
-    
-#     gigaarr = list(map(float, '10.559444 3.462529 10.151691 3.390188 3.505040 3.098232 124.871014 130.186262 9.678458 5.368532 3.489526 10.731812 11.284685 4.488179 4.020998 4.670785 1.413028 5.844535 1.155669 1.029124 5.777831'.split()))
+if __name__ == '__main__':
+    from netlist import tree_rc
 
-#     giga = sorted([(x, i) for i, x in enumerate(gigaarr)])
-#     ours = sorted(list(map(lambda p: (float(p[1]), p[0]), enumerate(np.diag(G)))))
-#     perm = np.array([i for i in range(tree_rc.n + 1)])
-    
-#     for i, (_, j) in enumerate(giga):
-#         perm[j + 1] = ours[i + 1][1]
-#     return perm, C[np.ix_(perm, perm)], G[np.ix_(perm, perm)]
+    # C, G = build_matrix_dr(tree_rc, 1.)
+    # Uq, Hq, Glu, Gpiv = ctarnoldi(C, G, 4)
+    # poles, residues_mat = compute_poles_res(Uq, Hq, C, G, Glu, Gpiv)
+    # eig, eigP = np.linalg.eig(Hq)
 
-from netlist import tree_rc
-
-# C, G = build_matrix_dr(tree_rc, 1.)
-# # # perm, Cperm, Gperm = _test_build_compare_perm()
-# Uq, Hq, Glu, Gpiv = ctarnoldi(C, G, 4)
-
-# # eig, eigP = np.linalg.eig(Hq)
-
-# compute exact solution using this reduced-order model
-vs = exact_solution_compatible_nodriver_nosinkcap(tree_rc)
-from spice import spice_calc_vt
-vs_spice = spice_calc_vt(tree_rc, slew=0., time_step=0.01, n_steps=5000, method='trapezoidal')
-import utils
-utils.plot(tree_rc, [('CT-Arnoldi (Order 4)', vs),
-                     ('SPICE Trapezoidal', vs_spice)],
-           title='CT-Arnoldi ROM')
-
-# poles, residues_mat = compute_poles_res(Uq, Hq, C, G, Glu, Gpiv)
+    # compute exact solution using this reduced-order model
+    vs = exact_solution_compatible_nodriver_nosinkcap(tree_rc)
+    from spice import spice_calc_vt
+    vs_spice = spice_calc_vt(tree_rc, slew=0.,
+                             time_step=0.01, n_steps=5000,
+                             method='trapezoidal')
+    import utils
+    utils.plot(tree_rc, [('CT-Arnoldi (Order 4)', vs),
+                         ('SPICE Trapezoidal', vs_spice)],
+               title='CT-Arnoldi ROM')
