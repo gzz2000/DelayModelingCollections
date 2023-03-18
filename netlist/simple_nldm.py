@@ -2,6 +2,12 @@
 # for demonstration of simultaneously solving net and cell
 # delays.
 
+# 1d/2d interpolation functions come directly from
+# difftimer python ground truth.
+def interpolate(f1, f2, x1, x2, x):
+    if x1 == x2: return f1
+    else: return ((x2 - x) * f1 + (x - x1) * f2) / (x2 - x1)
+
 class LUT:
     def __init__(self, xs, ys, vs):
         self.xs = xs
@@ -9,9 +15,46 @@ class LUT:
         self.vs = vs
         assert len(self.vs) == len(self.xs) * len(self.ys)
 
-    def query(self, x, y):
-        raise NotImplementedError
+    def lookup_grad(self, x, y):
+        n = len(self.xs)
+        m = len(self.ys)
+        xi, xj, yi, yj = 0, 0, 0, 0
+        if n > 1:
+            while xi + 1 < n and self.xs[xi + 1] <= x: xi += 1
+            xj = xi
+            if xj + 1 < n: xj += 1
+            else: xi -= 1
+        if m > 1:
+            while yi + 1 < m and self.ys[yi + 1] <= y: yi += 1
+            yj = yi
+            if yj + 1 < n: yj += 1
+            else: yi -= 1
+        def FT(i, j):
+            return self.vs[i * m + j]
+        def XT(i):
+            return self.xs[i]
+        def YT(j):
+            return self.ys[j]
+        rxi = interpolate(FT(xi, yi), FT(xi, yj), YT(yi), YT(yj), y)
+        rxj = interpolate(FT(xj, yi), FT(xj, yj), YT(yi), YT(yj), y)
+        ryi = interpolate(FT(xi, yi), FT(xj, yi), XT(xi), XT(xj), x)
+        ryj = interpolate(FT(xi, yj), FT(xj, yj), XT(xi), XT(xj), x)
+        r = interpolate(rxi, rxj, XT(xi), XT(xj), x)
+        if abs(rxi - rxj) < 1e-10:
+            dx = 0
+        else:
+            dx = (rxj - rxi) / (XT(xj) - XT(xi))
+        if abs(ryi - ryj) < 1e-10:
+            dy = 0
+        else:
+            dy = (ryj - ryi) / (YT(yj) - YT(yi))
+        return r, dx, dy
 
+    def lookup(self, x, y):
+        return self.lookup_grad(x, y)[0]
+
+# below LUTs are indexed by (output cap, input slew),
+# per simple_Early.lib template definition.
 inv_x1_az_cell_rise = LUT(
     xs=[0.00,1.00,2.00,4.00,8.00,16.00,32.00],
     ys=[5.00,30.00,50.00,80.00,140.00,200.00,300.00,500.00],
