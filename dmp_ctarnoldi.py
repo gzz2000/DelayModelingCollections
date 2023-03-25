@@ -218,6 +218,75 @@ def test_NR(Ceff, dt, t0, tr1):
 
         dt = max(dt, 0.01)
 
+def calc_f123val(delay, slew, dt, t0, tr1):
+    fval = np.zeros(3)
+    fval[0] = calc_waveform(delay - t0, dt) - th_delay
+    fval[1] = calc_waveform(tr1 - t0, dt) - th_slew1
+    fval[2] = calc_waveform(tr1 + slew - t0, dt) - th_slew2
+    return fval
+
+def calc_f123jacobian(delay, slew, dt, t0, tr1):
+    jacobian = np.zeros((3, 3))
+    
+    # df{1, 2, 3}
+    gwf1t, gwf1dt = calc_waveform_grad(delay - t0, dt)
+    gwf2t, gwf2dt = calc_waveform_grad(tr1 - t0, dt)
+    gwf3t, gwf3dt = calc_waveform_grad(tr1 + slew - t0, dt)
+
+    # df / ddt
+    jacobian[0, 0] = gwf1dt
+    jacobian[1, 0] = gwf2dt
+    jacobian[2, 0] = gwf3dt
+
+    # df / dt0
+    jacobian[0, 1] = -gwf1t
+    jacobian[1, 1] = -gwf2t
+    jacobian[2, 1] = -gwf3t
+
+    # df / dtr1
+    jacobian[1, 2] = gwf2t
+    jacobian[2, 2] = gwf3t
+
+    return jacobian
+
+def test_Ceff_smallNR(Ceff, dt, t0, tr1):
+    delay_old = None  # detect convergence
+    for ceff_i in range(20):
+        delay = delay_lut.lookup(Ceff, input_slew)
+        slew = slew_lut.lookup(Ceff, input_slew)
+        print('===============================')
+        print(f'Ceff iter {ceff_i}: Ceff={Ceff}, delay={delay}, slew={slew}')
+        if delay_old is not None and math.fabs((delay_old - delay) / delay_old) < 1e-3:
+            print(f'| CONVERGED (1‰). STOP.')
+            break
+        
+        for nr_i in range(20):
+            fval = calc_f123val(delay, slew, dt, t0, tr1)
+            print(f'\\__ smallNR iter {nr_i}, dt={dt}, t0={t0}, tr1={tr1}, fval={fval}')
+            if np.max(np.abs(fval)) < 1e-5:
+                print(f'\\__ smallNR EARLY STOP.')
+                break
+            jacobian = calc_f123jacobian(delay, slew, dt, t0, tr1)
+            delta = np.linalg.pinv(jacobian) @ fval
+            dt -= delta[0]
+            t0 -= delta[1]
+            tr1 -= delta[2]
+            print(f'\\__     UPDATE delta={delta}')
+            assert dt > 0., 'Too small dt, you may have to decrease Rd.'
+        else:
+            print('WARN: smallNR not converged after many iters.')
+            
+        Qpidt = np.dot(residues_mat[0], (-1. + np.exp(dt * poles) - dt * poles) / (dt * poles**2 * Rd))
+        QCeff_quad_coeff = Rd * (-1. + math.exp(-dt / (Ceff * Rd))) / dt
+        Ceff_new = (-1. + math.sqrt(1 + 4. * QCeff_quad_coeff * Qpidt)) / (2. * QCeff_quad_coeff)
+        print(f'| NEW Ceff={Ceff_new} (old: {Ceff})')
+        assert Ceff_new < Ceff, 'Should most likely be decreasing.'
+        Ceff = Ceff_new
+        delay_old = delay
+    else:
+        print('WARN: Ceff and delay not converged after many iters.')
+    
 if __name__ == '__main__':
     # debug_fval_slider(Ceff, dt, t0, tr1)
-    test_NR(Ceff, dt, t0, tr1)
+    # test_NR(Ceff, dt, t0, tr1)
+    test_Ceff_smallNR(Ceff, dt, t0, tr1)
