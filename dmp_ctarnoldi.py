@@ -29,9 +29,8 @@ init_delay = delay_lut.lookup(init_cap, input_slew)
 Rd = init_slew / (init_cap * math.log(th_slew2 / th_slew1)) / 4.
 
 C, G = build_matrix_dr(tree_rc, Rd)
-Uq, Hq, Glu, Gpiv = ctarnoldi(C, G, order)
-poles, residues_mat = compute_poles_res(Uq, Hq, C, G, Glu, Gpiv)
-residues_mat = residues_mat[1:, :]
+Uq, Hq, Glu, Gpiv = ctarnoldi(C, G, order, Rd)
+poles, residues_mat = compute_poles_res(Uq, Hq, C, G, Glu, Gpiv, Rd)
 
 # adapted from eq(16)-(17). initial guess of Ceff and driver
 Ceff = init_cap

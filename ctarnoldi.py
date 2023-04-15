@@ -8,37 +8,35 @@ import pdb
 # returns an (n+1)*(n+1) matrix, (0, 0) inserted as real driver
 def build_matrix_dr(rc, driver_rd):
     assert rc.endpoints[0] == (0, 'O'), 'We assume root to be #0 node'
-    C = np.zeros((rc.n + 1, rc.n + 1), dtype=np.float32)
-    G = np.zeros((rc.n + 1, rc.n + 1), dtype=np.float32)
-    G[0, 0] = 1.
+    C = np.zeros((rc.n, rc.n), dtype=np.float32)
+    G = np.zeros((rc.n, rc.n), dtype=np.float32)
     # connect driver (0) and root (1) with given res
-    G[1, 0] = -1. / driver_rd
-    G[1, 1] = 1. / driver_rd
+    G[0, 0] = 1. / driver_rd
     for i, c in rc.grounded_caps:
-        C[i + 1, i + 1] += c
+        C[i, i] += c
     for i1, i2, c in rc.coupling_caps:
-        C[i1 + 1, i1 + 1] += c
-        C[i1 + 1, i2 + 1] -= c
-        C[i2 + 1, i2 + 1] += c
-        C[i2 + 1, i1 + 1] -= c
+        C[i1, i1] += c
+        C[i1, i2] -= c
+        C[i2, i2] += c
+        C[i2, i1] -= c
     for i1, i2, r in rc.ress:
         assert r >= 0.00001, 'Too small resistance'
         invr = 1. / r
-        G[i1 + 1, i1 + 1] += invr
-        G[i1 + 1, i2 + 1] -= invr
-        G[i2 + 1, i2 + 1] += invr
-        G[i2 + 1, i1 + 1] -= invr
+        G[i1, i1] += invr
+        G[i1, i2] -= invr
+        G[i2, i2] += invr
+        G[i2, i1] -= invr
     for i, c in enumerate(rc.sink_cell_caps):
-        C[i + 2, i + 2] += c
+        C[i + 1, i + 1] += c
     return C, G
 
 # assume single driver at 0
-def ctarnoldi(C, G, q):
+def ctarnoldi(C, G, q, driver_rd):
     n = C.shape[0]
     assert q <= n
     lu, piv = lg.lu_factor(G)
     e = np.zeros(n, dtype=np.float32)
-    e[0] = -1.
+    e[0] = -1. / driver_rd
     u0 = -lg.lu_solve((lu, piv), e)
     z0 = C @ u0
     h00 = np.sqrt(np.dot(u0, z0))
@@ -63,12 +61,12 @@ def ctarnoldi(C, G, q):
     Hq = H[:q, :]
     return Uq, Hq, lu, piv
 
-def compute_poles_res(Uq, Hq, C, G, Glu, Gpiv):
+def compute_poles_res(Uq, Hq, C, G, Glu, Gpiv, driver_rd):
     eig, eigP = np.linalg.eig(Hq)
     n = Glu.shape[0]
     q = Hq.shape[0]
     e = np.zeros(n, dtype=np.float32)
-    e[0] = -1.
+    e[0] = -1. / driver_rd
     r = lg.lu_solve((Glu, Gpiv), e)
     norm_r = np.sqrt(np.dot(r, C @ r))
     poles = 1. / eig
@@ -79,18 +77,15 @@ def exact_solution_compatible_nodriver_nosinkcap(rc, q=4, time_step=0.01, n_step
     C, G = build_matrix_dr(rc, 1.)
     # undo sink cap
     for i, c in enumerate(rc.sink_cell_caps):
-        C[i + 2, i + 2] -= c
-    # clip n only
-    C = C[1:, 1:]
-    G = G[1:, 1:]
+        C[i + 1, i + 1] -= c
+    # clip driver back-current
     C[0, 0] = 0.
     G[0, :] = 0.
     G[0, 0] = 1.
-    pdb.set_trace()
     assert C.shape == (rc.n, rc.n)
     assert G.shape == (rc.n, rc.n)
-    Uq, Hq, Glu, Gpiv = ctarnoldi(C, G, q)
-    poles, residues_mat = compute_poles_res(Uq, Hq, C, G, Glu, Gpiv)
+    Uq, Hq, Glu, Gpiv = ctarnoldi(C, G, q, 1.)
+    poles, residues_mat = compute_poles_res(Uq, Hq, C, G, Glu, Gpiv, 1.)
     print(np.sum(residues_mat, axis=1))
 
     vs = [(0, np.zeros(rc.n))]
@@ -104,18 +99,18 @@ def exact_solution_compatible_nodriver_nosinkcap(rc, q=4, time_step=0.01, n_step
 if __name__ == '__main__':
     from netlist import tree_rc
 
-    # C, G = build_matrix_dr(tree_rc, 1.)
-    # Uq, Hq, Glu, Gpiv = ctarnoldi(C, G, 4)
-    # poles, residues_mat = compute_poles_res(Uq, Hq, C, G, Glu, Gpiv)
-    # eig, eigP = np.linalg.eig(Hq)
+    C, G = build_matrix_dr(tree_rc, 1.)
+    Uq, Hq, Glu, Gpiv = ctarnoldi(C, G, 4, 1.)
+    poles, residues_mat = compute_poles_res(Uq, Hq, C, G, Glu, Gpiv, 1.)
+    eig, eigP = np.linalg.eig(Hq)
 
-    # compute exact solution using this reduced-order model
-    vs = exact_solution_compatible_nodriver_nosinkcap(tree_rc)
-    from spice import spice_calc_vt
-    vs_spice = spice_calc_vt(tree_rc, slew=0.,
-                             time_step=0.01, n_steps=5000,
-                             method='trapezoidal')
-    import utils
-    utils.plot(tree_rc, [('CT-Arnoldi (Order 4)', vs),
-                         ('SPICE Trapezoidal', vs_spice)],
-               title='CT-Arnoldi ROM')
+    # # compute exact solution using this reduced-order model
+    # vs = exact_solution_compatible_nodriver_nosinkcap(tree_rc)
+    # from spice import spice_calc_vt
+    # vs_spice = spice_calc_vt(tree_rc, slew=0.,
+    #                          time_step=0.01, n_steps=5000,
+    #                          method='trapezoidal')
+    # import utils
+    # utils.plot(tree_rc, [('CT-Arnoldi (Order 4)', vs),
+    #                      ('SPICE Trapezoidal', vs_spice)],
+    #            title='CT-Arnoldi ROM')
