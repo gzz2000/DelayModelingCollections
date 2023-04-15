@@ -69,7 +69,7 @@ def calc_waveform_grad(t, dt, node_id=0):
     return g_t, g_dt
 
 def calc_fval(Ceff, dt, t0, tr1):
-    fval = np.zeros(4)
+    fval = np.zeros(4, dtype=np.float32)
     
     Qpidt = np.dot(residues_mat[0], (-1. + np.exp(dt * poles) - dt * poles) / (dt * poles**2 * Rd))
     QCeffdt = Ceff + Rd * Ceff**2 * (-1. + math.exp(-dt / (Ceff * Rd))) / dt
@@ -88,7 +88,7 @@ def calc_jacobian(Ceff, dt, t0, tr1):
     delay, delay_grad_x, _ = delay_lut.lookup_grad(Ceff, input_slew)
     slew, slew_grad_x, _ = slew_lut.lookup_grad(Ceff, input_slew)
 
-    jacobian = np.zeros((4, 4))
+    jacobian = np.zeros((4, 4), dtype=np.float32)
     
     # df0 / dCeff = - dQCeffdt / dCeff
     jacobian[0, 0] = -(dt - 2. * Ceff * Rd + math.exp(-dt / (Ceff * Rd)) * (dt + 2 * Ceff * Rd) / dt)
@@ -133,7 +133,7 @@ def debug_fval_slider(Ceff, dt, t0, tr1):
     matplotlib.use('TkAgg')
 
     fig, (ax_fval, ax) = plt.subplots(2)
-    t = np.linspace(-50, 300, 5000)
+    t = np.linspace(-50, 300, 5000, dtype=np.float32)
     
     def calc_waveform_vs(t, dt, t0):
         t = np.maximum(0., t - t0)
@@ -220,14 +220,14 @@ def test_NR(Ceff, dt, t0, tr1):
         dt = max(dt, 0.01)
 
 def calc_f123val(delay, slew, dt, t0, tr1):
-    fval = np.zeros(3)
+    fval = np.zeros(3, dtype=np.float32)
     fval[0] = calc_waveform(delay - t0, dt) - th_delay
     fval[1] = calc_waveform(tr1 - t0, dt) - th_slew1
     fval[2] = calc_waveform(tr1 + slew - t0, dt) - th_slew2
     return fval
 
 def calc_f123jacobian(delay, slew, dt, t0, tr1):
-    jacobian = np.zeros((3, 3))
+    jacobian = np.zeros((3, 3), dtype=np.float32)
     
     # df{1, 2, 3}
     gwf1t, gwf1dt = calc_waveform_grad(delay - t0, dt)

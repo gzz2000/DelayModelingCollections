@@ -8,8 +8,8 @@ import pdb
 # returns an (n+1)*(n+1) matrix, (0, 0) inserted as real driver
 def build_matrix_dr(rc, driver_rd):
     assert rc.endpoints[0] == (0, 'O'), 'We assume root to be #0 node'
-    C = np.zeros((rc.n + 1, rc.n + 1))
-    G = np.zeros((rc.n + 1, rc.n + 1))
+    C = np.zeros((rc.n + 1, rc.n + 1), dtype=np.float32)
+    G = np.zeros((rc.n + 1, rc.n + 1), dtype=np.float32)
     G[0, 0] = 1.
     # connect driver (0) and root (1) with given res
     G[1, 0] = -1. / driver_rd
@@ -37,12 +37,12 @@ def ctarnoldi(C, G, q):
     n = C.shape[0]
     assert q <= n
     lu, piv = lg.lu_factor(G)
-    e = np.zeros(n)
+    e = np.zeros(n, dtype=np.float32)
     e[0] = -1.
     u0 = -lg.lu_solve((lu, piv), e)
     z0 = C @ u0
     h00 = np.sqrt(np.dot(u0, z0))
-    H = np.zeros((q + 1, q))
+    H = np.zeros((q + 1, q), dtype=np.float32)
     z1 = z0 / h00
     u1 = u0 / h00
     zs = [z0, z1]
@@ -67,7 +67,7 @@ def compute_poles_res(Uq, Hq, C, G, Glu, Gpiv):
     eig, eigP = np.linalg.eig(Hq)
     n = Glu.shape[0]
     q = Hq.shape[0]
-    e = np.zeros(n)
+    e = np.zeros(n, dtype=np.float32)
     e[0] = -1.
     r = lg.lu_solve((Glu, Gpiv), e)
     norm_r = np.sqrt(np.dot(r, C @ r))
