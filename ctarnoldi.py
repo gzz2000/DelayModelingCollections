@@ -40,25 +40,23 @@ def ctarnoldi(C, G, q, driver_rd):
     u0 = -lg.lu_solve((lu, piv), e)
     z0 = C @ u0
     h00 = np.sqrt(np.dot(u0, z0))
-    H = np.zeros((q + 1, q), dtype=np.float32)
-    z1 = z0 / h00
-    u1 = u0 / h00
-    zs = [z0, z1]
-    us = [u0, u1]
+    Hq = np.zeros((q, q), dtype=np.float32)
+    zs = [z0 / h00]
+    us = [u0 / h00]
     for j in range(1, q + 1):
-        w = -lg.lu_solve((lu, piv), zs[j])
-        for i in range(j):
-            H[i, j - 1] = np.dot(w, zs[i + 1])
-            w -= H[i, j - 1] * us[i + 1]
+        w = -lg.lu_solve((lu, piv), zs[j - 1])
+        for i in range(max(j - 2, 0), j):
+            Hq[i, j - 1] = np.dot(w, zs[i])
+            w -= Hq[i, j - 1] * us[i]
+        if j >= q: break
         us.append(w)
         zs.append(C @ w)
-        hjpj = np.sqrt(np.dot(w, zs[j + 1]))
-        H[j, j - 1] = hjpj
+        hjpj = np.sqrt(np.dot(w, zs[j]))
+        Hq[j, j - 1] = hjpj
         if np.abs(hjpj) > 1e-5:
-            zs[j + 1] /= hjpj
-            us[j + 1] /= hjpj
-    Uq = np.stack(us[1:], axis=1)
-    Hq = H[:q, :]
+            zs[j] /= hjpj
+            us[j] /= hjpj
+    Uq = np.stack(us, axis=1)
     return Uq, Hq, lu, piv
 
 def compute_poles_res(Uq, Hq, C, G, Glu, Gpiv, driver_rd):
