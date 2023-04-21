@@ -5,12 +5,12 @@ import scipy.linalg as lg
 import pdb
 
 # assume single driver at pin 0.
-# returns an (n+1)*(n+1) matrix, (0, 0) inserted as real driver
+# returns an nxn symmetric matrix, with (0, 0) connected to a virtual super-driver
 def build_matrix_dr(rc, driver_rd):
     assert rc.endpoints[0] == (0, 'O'), 'We assume root to be #0 node'
     C = np.zeros((rc.n, rc.n), dtype=np.float32)
     G = np.zeros((rc.n, rc.n), dtype=np.float32)
-    # connect driver (0) and root (1) with given res
+    # connect virtual driver and root (0) with given res
     G[0, 0] = 1. / driver_rd
     for i, c in rc.grounded_caps:
         C[i, i] += c
@@ -32,8 +32,8 @@ def build_matrix_dr(rc, driver_rd):
 
 # assume single driver at 0
 def ctarnoldi(C, G, q, driver_rd):
+    pdb.set_trace()
     n = C.shape[0]
-    assert q <= n
     lu, piv = lg.lu_factor(G)
     e = np.zeros(n, dtype=np.float32)
     e[0] = -1. / driver_rd
@@ -95,20 +95,22 @@ def exact_solution_compatible_nodriver_nosinkcap(rc, q=4, time_step=0.01, n_step
     return vs
 
 if __name__ == '__main__':
-    from netlist import tree_rc
+    from netlist import tree_rc, twopin_rc
 
-    C, G = build_matrix_dr(tree_rc, 1.)
+    rc = twopin_rc
+
+    C, G = build_matrix_dr(rc, 1.)
     Uq, Hq, Glu, Gpiv = ctarnoldi(C, G, 4, 1.)
     poles, residues_mat = compute_poles_res(Uq, Hq, C, G, Glu, Gpiv, 1.)
     eig, eigP = np.linalg.eig(Hq)
 
-    # # compute exact solution using this reduced-order model
-    # vs = exact_solution_compatible_nodriver_nosinkcap(tree_rc)
+    # compute exact solution using this reduced-order model
+    # vs = exact_solution_compatible_nodriver_nosinkcap(rc)
     # from spice import spice_calc_vt
-    # vs_spice = spice_calc_vt(tree_rc, slew=0.,
+    # vs_spice = spice_calc_vt(rc, slew=0.,
     #                          time_step=0.01, n_steps=5000,
     #                          method='trapezoidal')
     # import utils
-    # utils.plot(tree_rc, [('CT-Arnoldi (Order 4)', vs),
-    #                      ('SPICE Trapezoidal', vs_spice)],
+    # utils.plot(rc, [('CT-Arnoldi (Order 4)', vs),
+    #                 ('SPICE Trapezoidal', vs_spice)],
     #            title='CT-Arnoldi ROM')
