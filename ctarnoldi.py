@@ -32,7 +32,6 @@ def build_matrix_dr(rc, driver_rd):
 
 # assume single driver at 0
 def ctarnoldi(C, G, q, driver_rd):
-    pdb.set_trace()
     n = C.shape[0]
     lu, piv = lg.lu_factor(G)
     e = np.zeros(n, dtype=np.float32)
@@ -66,9 +65,9 @@ def compute_poles_res(Uq, Hq, C, G, Glu, Gpiv, driver_rd):
     e = np.zeros(n, dtype=np.float32)
     e[0] = -1. / driver_rd
     r = lg.lu_solve((Glu, Gpiv), e)
-    norm_r = np.sqrt(np.dot(r, C @ r))
+    norm_r = np.sqrt(np.dot(r, C @ r))  # should be equal to h00
     poles = 1. / eig
-    residues_mat = norm_r * (Uq[:, :q] @ eigP) * eigP[0, :].reshape(1, q)
+    residues_mat = norm_r * (Uq @ eigP) * eigP[0, :].reshape(1, q)
     return poles, residues_mat
 
 def exact_solution_compatible_nodriver_nosinkcap(rc, q=4, time_step=0.01, n_steps=5000):
@@ -97,7 +96,7 @@ def exact_solution_compatible_nodriver_nosinkcap(rc, q=4, time_step=0.01, n_step
 if __name__ == '__main__':
     from netlist import tree_rc, twopin_rc
 
-    rc = twopin_rc
+    rc = tree_rc
 
     C, G = build_matrix_dr(rc, 1.)
     Uq, Hq, Glu, Gpiv = ctarnoldi(C, G, 4, 1.)
