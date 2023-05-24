@@ -6,18 +6,31 @@ import math
 import pdb
 
 from ctarnoldi import build_matrix_dr, ctarnoldi, compute_poles_res
-from netlist import tree_rc
-from netlist.simple_nldm import inv_x1_az_cell_rise as delay_lut, inv_x1_az_rise_trans as slew_lut
 
 order = 4
+tested_net = 'n3_tree_rc' # 'n3_tree_rc'
 
-# from liberty
-# might be different for rise/fall later, be careful.
-th_delay = 0.5
-th_slew1, th_slew2 = 0.2, 0.8
+if tested_net == 'tree_rc':
+    from netlist import tree_rc
+    from netlist.simple_nldm import inv_x1_az_cell_rise as delay_lut, inv_x1_az_rise_trans as slew_lut
 
-# from propagation setup
-input_slew = 1.01
+    # from liberty
+    # might be different for rise/fall later, be careful.
+    th_delay = 0.5
+    th_slew1, th_slew2 = 0.2, 0.8
+
+    # from propagation setup
+    input_slew = 1.01
+
+elif tested_net == 'n3_tree_rc':
+    from netlist import n3_tree_rc as tree_rc
+    # from netlist.simple_nldm import dqv1_ckq_cell_rise as delay_lut, dqv1_ckq_rise_trans as slew_lut
+    from netlist.simple_nldm import invizn_cell_rise as delay_lut, invizn_rise_trans as slew_lut
+
+    th_delay = 0.5
+    th_slew1, th_slew2 = 0.3, 0.7
+    input_slew = 50. * 0.5
+    # input_slew = 0.
 
 total_cap = sum(cap for _, cap in tree_rc.grounded_caps) + sum(tree_rc.sink_cell_caps)
 print('total_cap', total_cap)
@@ -26,7 +39,9 @@ print('total_cap', total_cap)
 init_cap = min(total_cap, delay_lut.xs[-1])
 init_slew = slew_lut.lookup(init_cap, input_slew)
 init_delay = delay_lut.lookup(init_cap, input_slew)
-Rd = init_slew / (init_cap * math.log(th_slew2 / th_slew1)) / 4.
+Rd = init_slew / (init_cap * math.log(th_slew2 / th_slew1)) * 0.9
+# Rd = 2.081
+# Rd = 1.56
 
 C, G = build_matrix_dr(tree_rc, Rd)
 Uq, Hq, Glu, Gpiv = ctarnoldi(C, G, order, Rd)
@@ -249,10 +264,30 @@ def calc_f123jacobian(delay, slew, dt, t0, tr1):
 
     return jacobian
 
+def calc_f12val(delay, slew, dt, t0):
+    fval = np.zeros(2, dtype=np.float32)
+    fval[0] = calc_waveform(delay - t0, dt) - th_delay
+    fval[1] = calc_waveform(delay - slew * (th_delay - th_slew1) / (th_slew2 - th_slew1) - t0, dt) - th_slew1
+    return fval
+
+def calc_f12jacobian(delay, slew, dt, t0):
+    jacobian = np.zeros((2, 2), dtype=np.float32)
+    gwf1t, gwf1dt = calc_waveform_grad(delay - t0, dt)
+    gwf2t, gwf2dt = calc_waveform_grad(delay - slew * (th_delay - th_slew1) / (th_slew2 - th_slew1) - t0, dt)
+    # df1 / d{dt, t0}
+    jacobian[0, 0] = gwf1dt
+    jacobian[0, 1] = -gwf1t
+    # df2 / d{dt, t0}
+    jacobian[1, 0] = gwf2dt
+    jacobian[1, 1] = -gwf2t
+    return jacobian
+
 def test_Ceff_smallNR(Ceff, dt, t0, tr1):
     delay_old = None  # detect convergence
     slew_old = None   # detect convergence
-    for ceff_i in range(20):
+    Ceff_old = None
+    dt_old, t0_old, tr1_old = None, None, None
+    for ceff_i in range(200):
         delay = delay_lut.lookup(Ceff, input_slew)
         slew = slew_lut.lookup(Ceff, input_slew)
         print('===============================')
@@ -262,12 +297,14 @@ def test_Ceff_smallNR(Ceff, dt, t0, tr1):
            math.fabs((slew_old - slew) / slew_old) < 1e-3:
             print(f'| CONVERGED (1‰). STOP.')
             break
-        
+
+        nr_converged = False
         for nr_i in range(20):
             fval = calc_f123val(delay, slew, dt, t0, tr1)
             print(f'\\__ smallNR iter {nr_i}, dt={dt}, t0={t0}, tr1={tr1}, fval={fval}')
             if np.max(np.abs(fval)) < 1e-3:
                 print(f'\\__ smallNR EARLY STOP.')
+                nr_converged = True
                 break
             jacobian = calc_f123jacobian(delay, slew, dt, t0, tr1)
             delta = np.linalg.pinv(jacobian) @ fval
@@ -275,32 +312,116 @@ def test_Ceff_smallNR(Ceff, dt, t0, tr1):
             t0 -= delta[1]
             tr1 -= delta[2]
             print(f'\\__     UPDATE delta={delta}')
-            assert dt > 0., 'Too small dt, you may have to decrease Rd.'
-        else:
+            if dt < 0.:
+                print('WARN: Too small dt, Rd too large or Ceff decreased too fast')
+                break
+        if not nr_converged:
             print('WARN: smallNR not converged after many iters.')
+            if Ceff_old is not None:
+                print('WARN: -> trying to lower Ceff step..')
+                Ceff = (Ceff + Ceff_old) / 2.
+                dt, t0, tr1 = dt_old, t0_old, tr1_old
+                continue
             
         Qpidt = np.dot(residues_mat[0], (-1. + np.exp(dt * poles) - dt * poles) / (dt * poles**2 * Rd))
         QCeff_quad_coeff = Rd * (-1. + math.exp(-dt / (Ceff * Rd))) / dt
         Ceff_new = (-1. + math.sqrt(1 + 4. * QCeff_quad_coeff * Qpidt)) / (2. * QCeff_quad_coeff)
         print(f'| NEW Ceff={Ceff_new} (old: {Ceff})')
-        assert Ceff_new < Ceff, 'Should most likely be decreasing.'
+        # assert Ceff_new < Ceff, 'Should most likely be decreasing.'
+        Ceff_old = Ceff
         Ceff = Ceff_new
         delay_old = delay
         slew_old = slew
+        dt_old, t0_old, tr1_old = dt, t0, tr1
     else:
         print('WARN: Ceff and delay not converged after many iters.')
 
     return Ceff, delay, slew, dt, t0, tr1
 
+def test_Ceff_ultrasmallNR(Ceff, dt, t0):
+    delay_old = None  # detect convergence
+    slew_old = None   # detect convergence
+    Ceff_old = None
+    dt_old, t0_old = None, None
+
+    # calculate the Q in [0, dt / REGION] instead of
+    # [0, dt]. an ugly fix to the wrong Ceff..
+    REGION = 0.55
+    
+    for ceff_i in range(200):
+        delay = delay_lut.lookup(Ceff, input_slew)
+        slew = slew_lut.lookup(Ceff, input_slew)
+        print('===============================')
+        print(f'Ceff iter {ceff_i}: Ceff={Ceff}, delay={delay}, slew={slew}')
+        if delay_old is not None and \
+           math.fabs((delay_old - delay) / delay_old) < 1e-3 and \
+           math.fabs((slew_old - slew) / slew_old) < 1e-3:
+            print(f'| CONVERGED (1‰). STOP.')
+            break
+
+        nr_converged = False
+        for nr_i in range(20):
+            fval = calc_f12val(delay, slew, dt, t0)
+            print(f'\\__ smallNR iter {nr_i}, dt={dt}, t0={t0}, fval={fval}')
+            if np.max(np.abs(fval)) < 1e-3:
+                print(f'\\__ smallNR EARLY STOP.')
+                nr_converged = True
+                break
+            jacobian = calc_f12jacobian(delay, slew, dt, t0)
+            delta = np.linalg.pinv(jacobian) @ fval
+            dt -= delta[0]
+            t0 -= delta[1]
+            print(f'\\__     UPDATE delta={delta}')
+            if dt < 0.:
+                print('WARN: Too small dt, Rd too large or Ceff decreased too fast')
+                break
+        if not nr_converged:
+            print('WARN: smallNR not converged after many iters.')
+            if Ceff_old is not None:
+                print('WARN: -> trying to lower Ceff step..')
+                Ceff = (Ceff + Ceff_old) / 2.
+                dt, t0 = dt_old, t0_old
+                continue
+            
+        Qpidt = np.dot(residues_mat[0], (-REGION + np.exp(dt * poles / REGION) * REGION - dt * poles) / (dt * poles**2 * Rd * REGION))
+        QCeffdt = Ceff / REGION + Rd * Ceff**2 * (-1. + math.exp(-dt / (Ceff * Rd * REGION))) / dt
+        print('Qpidt', Qpidt, ', QCeffdt', QCeffdt)
+        QCeff_quad_coeff = Rd * (-1. + math.exp(-dt / (Ceff * Rd * REGION))) / dt
+        Ceff_new = (-1. / REGION + math.sqrt(max(0., 1. / REGION**2 + 4. * QCeff_quad_coeff * Qpidt))) / (2. * QCeff_quad_coeff)
+        if Ceff_new > Ceff:
+            Ceff_new = (Ceff + Ceff_new) / 2.
+        print(f'| NEW Ceff={Ceff_new} (old: {Ceff})')
+        # assert Ceff_new < Ceff, 'Should most likely be decreasing.'
+        Ceff_old = Ceff
+        Ceff = Ceff_new
+        delay_old = delay
+        slew_old = slew
+        dt_old, t0_old = dt, t0
+    else:
+        print('WARN: Ceff and delay not converged after many iters.')
+
+    return Ceff, delay, slew, dt, t0
+
 def calc_single_timepoint_nr(dt, node_id, v, init_t):
     t = init_t
+    last_t = t
+    last_absf = 100.
     for i in range(20):
         f = calc_waveform(t, dt, node_id=node_id) - v
-        if math.fabs(f) < 1e-3:
-            print(f'timepoint of node {node_id} v {v}: converged in {i} iters')
-            break
+        absf = math.fabs(f)
         g, _ = calc_waveform_grad(t, dt, node_id=node_id)
-        t -= f / g
+        # print(f'single timepoint nr: i={i}, t={t}, f={f}, g={g}')
+        if absf < 1e-3:
+            # print(f'timepoint of node {node_id} v {v}: converged in {i} iters')
+            break
+        if not (absf < last_absf):
+            # print('lowering step to solve the timepoint')
+            t = (t + last_t * 3.) / 4.
+            continue
+        last_absf = absf
+        new_t = t - f / g
+        last_t = t
+        t = new_t
     else:
         print('WARN: single timepoint not converged after many iters.')
     return t
@@ -308,7 +429,8 @@ def calc_single_timepoint_nr(dt, node_id, v, init_t):
 if __name__ == '__main__':
     # debug_fval_slider(Ceff, dt, t0, tr1)
     # test_NR(Ceff, dt, t0, tr1)
-    Ceff, delay, slew, dt, t0, tr1 = test_Ceff_smallNR(Ceff, dt, t0, tr1)
+    # Ceff, delay, slew, dt, t0, tr1 = test_Ceff_smallNR(Ceff, dt, t0, tr1)
+    Ceff, delay, slew, dt, t0 = test_Ceff_ultrasmallNR(Ceff, dt, t0)
     for endpoint, io in tree_rc.endpoints:
         if io != 'I': continue
         t_delay = calc_single_timepoint_nr(dt, endpoint, th_delay, delay - t0)

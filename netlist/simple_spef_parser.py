@@ -86,3 +86,8 @@ def parse_file(path):
                 elif reading == 'RES': ress.append(tuple(c))
                 else: assert False, 'bad reading state'
     return Parasitics(endpoints=endpoints, caps=caps, ress=ress)
+
+def build_pi_model(c1, rpi, c2):
+    return Parasitics(endpoints=[('node1', 'O'), ('node2', 'I')],
+                      caps=[('node1', c1), ('node2', c2)],
+                      ress=[('node1', 'node2', rpi)])
